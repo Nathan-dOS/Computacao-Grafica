@@ -384,7 +384,8 @@ void MostrarUmPatch(int cc)
                 float nA[3];
                 calcNormalTri(v00, v01, v11, nA);
                 float cA[3] = { (v00[X]+v01[X]+v11[X])/3.0f, (v00[Y]+v01[Y]+v11[Y])/3.0f, (v00[Z]+v01[Z]+v11[Z])/3.0f };
-                float contribA = luzContrib(lightPos1, nA, cA) + 0.6f * luzContrib(lightPos2, nA, cA);
+                float ambient = 0.25f;
+                float contribA = ambient + luzContrib(lightPos1, nA, cA) + 0.6f * luzContrib(lightPos2, nA, cA);
                 if(contribA > 1.0f) contribA = 1.0f;
 
                 glBegin(GL_TRIANGLES);
