@@ -304,25 +304,31 @@ void calcNormalTri(float v0[3], float v1[3], float v2[3], float n[3])
 }
 
 // calcula contribuição de uma luz (pos) para triângulo com normal n e centro c
-float luzContrib(const f4d posLight, float n[3], float c[3])
+float luzContrib(const f4d lightPos, float n[3], float c[3])
 {
-    float L[3];
-    L[X] = posLight[X] - c[X];
-    L[Y] = posLight[Y] - c[Y];
-    L[Z] = posLight[Z] - c[Z];
+    // vetor da luz: da posição do ponto até a luz
+    float L[3] = {
+        lightPos.x - c[0],
+        lightPos.y - c[1],
+        lightPos.z - c[2]
+    };
 
-    float dist = sqrt(L[X]*L[X] + L[Y]*L[Y] + L[Z]*L[Z]);
-    if(dist == 0.0f) dist = 1.0f;
-    L[X] /= dist; L[Y] /= dist; L[Z] /= dist;
+    // distância da luz ao ponto
+    float dist = sqrtf(L[0]*L[0] + L[1]*L[1] + L[2]*L[2]);
 
-    float dot = n[X]*L[X] + n[Y]*L[Y] + n[Z]*L[Z];
-    if(dot < 0.0f) dot = 0.0f;
+    // normalização de L
+    L[0] /= dist;
+    L[1] /= dist;
+    L[2] /= dist;
 
-    // atenuação simples: 1 / (1 + k * d^2)
-    float k = 0.005f;
-    float att = 1.0f / (1.0f + k * dist * dist);
+    // produto escalar entre normal e vetor luz
+    float dot = n[0]*L[0] + n[1]*L[1] + n[2]*L[2];
+    if (dot < 0.0f) dot = 0.0f;  // ignora luz atrás da superfície
 
-    return dot * att;
+    // atenuação pela distância
+    float att = 1.0f / (1.0f + 0.002f * dist * dist);
+
+    return dot * att;  // luz difusa com atenuação
 }
 
 void MostrarUmPatch(int cc)
