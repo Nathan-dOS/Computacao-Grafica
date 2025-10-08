@@ -1,5 +1,3 @@
-// superficieTriangulada.cpp
-// Versão triangulada com 2 fontes de luz e sombreamento por triângulo
 #include <GL/glut.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -63,7 +61,7 @@ matriz *pc = NULL;  //matriz de pontos de controle
 matriz *pcPatch = NULL;  // matriz de pontos para um patch
 matriz *pMatriz = NULL;
 
-// duas fontes de luz (world coordinates)
+// duas fontes de luz
 f4d lightPos1 = {30.0f, 30.0f, 30.0f, 1.0f}; // luz principal
 f4d lightPos2 = {-20.0f, 10.0f, -10.0f, 1.0f}; // luz secundária
 
@@ -303,125 +301,201 @@ void calcNormalTri(float v0[3], float v1[3], float v2[3], float n[3])
     n[X] /= s; n[Y] /= s; n[Z] /= s;
 }
 
-// calcula contribuição de uma luz (pos) para triângulo com normal n e centro c
-float luzContrib(const f4d lightPos, float n[3], float c[3])
+// calcula contribuição de uma luz para triângulo com normal n e centro c
+float luzContrib(const f4d lightPos, float n[3], float p[3])
 {
-    // vetor da luz: da posição do ponto até a luz
-    float L[3] = {
-        lightPos.x - c[0],
-        lightPos.y - c[1],
-        lightPos.z - c[2]
-    };
+    // vetor da luz: do ponto p até a luz (lightPos - p)
+    float L[3];
+    L[0] = lightPos[X] - p[0];
+    L[1] = lightPos[Y] - p[1];
+    L[2] = lightPos[Z] - p[2];
 
-    // distância da luz ao ponto
     float dist = sqrtf(L[0]*L[0] + L[1]*L[1] + L[2]*L[2]);
+    if(dist < 1e-6f) dist = 1e-6f; // evita divisão por zero
 
-    // normalização de L
-    L[0] /= dist;
-    L[1] /= dist;
-    L[2] /= dist;
+    // normaliza L
+    L[0] /= dist; L[1] /= dist; L[2] /= dist;
 
-    // produto escalar entre normal e vetor luz
+    // produto escalar normal · L
     float dot = n[0]*L[0] + n[1]*L[1] + n[2]*L[2];
-    if (dot < 0.0f) dot = 0.0f;  // ignora luz atrás da superfície
+    if (dot < 0.0f) dot = 0.0f;  // luz atrás = 0
 
-    // atenuação pela distância
+    // atenuação (ajuste os coeficientes se necessário)
     float att = 1.0f / (1.0f + 0.002f * dist * dist);
 
-    return dot * att;  // luz difusa com atenuação
+    return dot * att; // componente difusa com atenuação
+}
+
+// --- Calcula normais por vértice para pMatriz ---
+// resultado: um array (float*) com size = pMatriz->n * pMatriz->m * 3
+// index(i,j,k) = ((i * m) + j) * 3 + k
+float* computeVertexNormals(matriz *surf)
+{
+    if(!surf) return NULL;
+    int n = surf->n;
+    int m = surf->m;
+    int vcount = n * m;
+    float *vn = (float*) calloc(vcount * 3, sizeof(float));
+    if(!vn) return NULL;
+
+    int i, j;
+    // Para cada quad, compute duas normais e some em cada vértice
+    for(i = 0; i < n-1; ++i)
+    {
+        for(j = 0; j < m-1; ++j)
+        {
+            // vertices do quad
+            float v00[3] = { surf->ponto[i][j][X],   surf->ponto[i][j][Y],   surf->ponto[i][j][Z]   };
+            float v01[3] = { surf->ponto[i][j+1][X], surf->ponto[i][j+1][Y], surf->ponto[i][j+1][Z] };
+            float v11[3] = { surf->ponto[i+1][j+1][X], surf->ponto[i+1][j+1][Y], surf->ponto[i+1][j+1][Z] };
+            float v10[3] = { surf->ponto[i+1][j][X], surf->ponto[i+1][j][Y], surf->ponto[i+1][j][Z] };
+
+            float nA[3], nB[3];
+            calcNormalTri(v00, v01, v11, nA); // tri A
+            calcNormalTri(v00, v11, v10, nB); // tri B
+
+            // adiciona nA a v00, v01, v11
+            int idx;
+            idx = (i * m + j) * 3; vn[idx+0] += nA[0]; vn[idx+1] += nA[1]; vn[idx+2] += nA[2];
+            idx = (i * m + (j+1)) * 3; vn[idx+0] += nA[0]; vn[idx+1] += nA[1]; vn[idx+2] += nA[2];
+            idx = ((i+1) * m + (j+1)) * 3; vn[idx+0] += nA[0]; vn[idx+1] += nA[1]; vn[idx+2] += nA[2];
+
+            // adiciona nB a v00, v11, v10
+            idx = (i * m + j) * 3; vn[idx+0] += nB[0]; vn[idx+1] += nB[1]; vn[idx+2] += nB[2];
+            idx = ((i+1) * m + (j+1)) * 3; vn[idx+0] += nB[0]; vn[idx+1] += nB[1]; vn[idx+2] += nB[2];
+            idx = ((i+1) * m + j) * 3; vn[idx+0] += nB[0]; vn[idx+1] += nB[1]; vn[idx+2] += nB[2];
+        }
+    }
+
+    // normalizar cada normal de vértice
+    int v;
+    for(v = 0; v < vcount; ++v)
+    {
+        int base = v*3;
+        float nx = vn[base+0], ny = vn[base+1], nz = vn[base+2];
+        float s = sqrtf(nx*nx + ny*ny + nz*nz);
+        if(s < 1e-6f) s = 1e-6f;
+        vn[base+0] = nx / s; vn[base+1] = ny / s; vn[base+2] = nz / s;
+    }
+
+    return vn;
 }
 
 void MostrarUmPatch(int cc)
 {
     int i, j;
-    float t,v,s;
-    f4d a,b,n,l;
-
-    if(!pMatriz)  return;
+    if(!pMatriz) return;
 
     switch(tipoView)
     {
         case GL_POINTS:
-          glColor3f(0.0f, 0.0f, 0.7f);
-          glPointSize(1.0);
-          for(i = 0; i < pMatriz->n; i++)
-          {
-              glBegin(tipoView);
-              for(j = 0; j < pMatriz->m; j++)
-                 glVertex3fv(pMatriz->ponto[i][j]);
-              glEnd();
-          }
-          break;
+            glColor3f(0.0f, 0.0f, 0.7f);
+            glPointSize(1.0);
+            for(i = 0; i < pMatriz->n; i++){
+                glBegin(tipoView);
+                for(j = 0; j < pMatriz->m; j++)
+                    glVertex3fv(pMatriz->ponto[i][j]);
+                glEnd();
+            }
+            break;
 
         case GL_LINE_STRIP:
-          glColor3f(0.0f, 0.0f, 0.7f);
-          for(i = 0; i < pMatriz->n; i++)
-          {
-              glBegin(tipoView);
-              for(j = 0; j < pMatriz->m; j++)
-                 glVertex3fv(pMatriz->ponto[i][j]);
-              glEnd();
-          }
+            glColor3f(0.0f, 0.0f, 0.7f);
+            for(i = 0; i < pMatriz->n; i++){
+                glBegin(tipoView);
+                for(j = 0; j < pMatriz->m; j++)
+                    glVertex3fv(pMatriz->ponto[i][j]);
+                glEnd();
+            }
+            for(j = 0; j < pMatriz->n; j++){
+                glBegin(tipoView);
+                for(i = 0; i < pMatriz->m; i++)
+                    glVertex3fv(pMatriz->ponto[i][j]);
+                glEnd();
+            }
+            break;
 
-          for(j = 0; j < pMatriz->n; j++)
-          {
-              glBegin(tipoView);
-              for(i = 0; i < pMatriz->m; i++)
-                 glVertex3fv(pMatriz->ponto[i][j]);
-              glEnd();
-          }
-          break;
-
-        case GL_QUADS: // preserved if user sets it, but we will draw as filled quads triangulated
         case GL_TRIANGLES:
-          glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        default:
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
-          for(i = 0; i < pMatriz->n-1; i++)
-          {
-              for(j = 0; j < pMatriz->m-1; j++)
-              {
-                // vertices do quad
-                float v00[3] = { pMatriz->ponto[i][j][X],   pMatriz->ponto[i][j][Y],   pMatriz->ponto[i][j][Z]   };
-                float v01[3] = { pMatriz->ponto[i][j+1][X], pMatriz->ponto[i][j+1][Y], pMatriz->ponto[i][j+1][Z] };
-                float v11[3] = { pMatriz->ponto[i+1][j+1][X], pMatriz->ponto[i+1][j+1][Y], pMatriz->ponto[i+1][j+1][Z] };
-                float v10[3] = { pMatriz->ponto[i+1][j][X], pMatriz->ponto[i+1][j][Y], pMatriz->ponto[i+1][j][Z] };
+            // calcula normais por vértice (Gouraud)
+            float *vnorm = computeVertexNormals(pMatriz);
+            if(!vnorm) return;
 
-                // Triângulo A: v00, v01, v11
-                float nA[3];
-                calcNormalTri(v00, v01, v11, nA);
-                float cA[3] = { (v00[X]+v01[X]+v11[X])/3.0f, (v00[Y]+v01[Y]+v11[Y])/3.0f, (v00[Z]+v01[Z]+v11[Z])/3.0f };
-                float ambient = 0.25f;
-                float contribA = ambient + luzContrib(lightPos1, nA, cA) + 0.6f * luzContrib(lightPos2, nA, cA);
-                if(contribA > 1.0f) contribA = 1.0f;
+            int m = pMatriz->m;
 
-                glBegin(GL_TRIANGLES);
-                    glColor3f(contribA * vcolor[cc][X], contribA * vcolor[cc][Y], contribA * vcolor[cc][Z]);
-                    glNormal3fv(nA);
-                    glVertex3fv(pMatriz->ponto[i][j]);
-                    glVertex3fv(pMatriz->ponto[i][j+1]);
-                    glVertex3fv(pMatriz->ponto[i+1][j+1]);
-                glEnd();
+            for(i = 0; i < pMatriz->n-1; i++)
+            {
+                for(j = 0; j < pMatriz->m-1; j++)
+                {
+                    // 2 triângulos: A (v00, v01, v11) e B (v00, v11, v10)
+                    float v00[3] = { pMatriz->ponto[i][j][X],   pMatriz->ponto[i][j][Y],   pMatriz->ponto[i][j][Z]   };
+                    float v01[3] = { pMatriz->ponto[i][j+1][X], pMatriz->ponto[i][j+1][Y], pMatriz->ponto[i][j+1][Z] };
+                    float v11[3] = { pMatriz->ponto[i+1][j+1][X], pMatriz->ponto[i+1][j+1][Y], pMatriz->ponto[i+1][j+1][Z] };
+                    float v10[3] = { pMatriz->ponto[i+1][j][X], pMatriz->ponto[i+1][j][Y], pMatriz->ponto[i+1][j][Z] };
 
-                // Triângulo B: v00, v11, v10
-                float nB[3];
-                calcNormalTri(v00, v11, v10, nB);
-                float cB[3] = { (v00[X]+v11[X]+v10[X])/3.0f, (v00[Y]+v11[Y]+v10[Y])/3.0f, (v00[Z]+v11[Z]+v10[Z])/3.0f };
-                float contribB = luzContrib(lightPos1, nB, cB) + 0.6f * luzContrib(lightPos2, nB, cB);
-                if(contribB > 1.0f) contribB = 1.0f;
+                    // --- tri A ---
+                    int idx00 = (i * m + j) * 3;
+                    int idx01 = (i * m + (j+1)) * 3;
+                    int idx11 = ((i+1) * m + (j+1)) * 3;
 
-                glBegin(GL_TRIANGLES);
-                    glColor3f(contribB * vcolor[cc][X], contribB * vcolor[cc][Y], contribB * vcolor[cc][Z]);
-                    glNormal3fv(nB);
-                    glVertex3fv(pMatriz->ponto[i][j]);
-                    glVertex3fv(pMatriz->ponto[i+1][j+1]);
-                    glVertex3fv(pMatriz->ponto[i+1][j]);
-                glEnd();
+                    float n00[3] = { vnorm[idx00+0], vnorm[idx00+1], vnorm[idx00+2] };
+                    float n01[3] = { vnorm[idx01+0], vnorm[idx01+1], vnorm[idx01+2] };
+                    float n11v[3] = { vnorm[idx11+0], vnorm[idx11+1], vnorm[idx11+2] };
 
-              }
-          }
-          break;
+                    // calcula contribuição de cada luz por vértice
+                    float ambient = 0.15f; // ambient global
+                    float c00 = ambient + 2.2 * luzContrib(lightPos1, n00, v00) + 0.3f * luzContrib(lightPos2, n00, v00);
+                    float c01 = ambient + 2.2 * luzContrib(lightPos1, n01, v01) + 0.3f * luzContrib(lightPos2, n01, v01);
+                    float c11 = ambient + 2.2 * luzContrib(lightPos1, n11v, v11) + 0.3f * luzContrib(lightPos2, n11v, v11);
+
+                    // --- tri B ---
+                    if(c00 > 1.0f) c00 = 1.0f;
+                    if(c01 > 1.0f) c01 = 1.0f;
+                    if(c11 > 1.0f) c11 = 1.0f;
+
+                    // desenha triângulo A com cor por vértice
+                    glBegin(GL_TRIANGLES);
+                        glColor3f(c00 * vcolor[cc][X], c00 * vcolor[cc][Y], c00 * vcolor[cc][Z]);
+                        glNormal3fv(n00);
+                        glVertex3fv(v00);
+
+                        glColor3f(c01 * vcolor[cc][X], c01 * vcolor[cc][Y], c01 * vcolor[cc][Z]);
+                        glNormal3fv(n01);
+                        glVertex3fv(v01);
+
+                        glColor3f(c11 * vcolor[cc][X], c11 * vcolor[cc][Y], c11 * vcolor[cc][Z]);
+                        glNormal3fv(n11v);
+                        glVertex3fv(v11);
+                    glEnd();
+
+                    int idx10 = ((i+1) * m + j) * 3;
+
+                    float n10v[3] = { vnorm[idx10+0], vnorm[idx10+1], vnorm[idx10+2] };
+
+                    float c10 = ambient + luzContrib(lightPos1, n10v, v10) + 0.6f * luzContrib(lightPos2, n10v, v10);
+                    if(c10 > 1.0f) c10 = 1.0f;
+
+                    glBegin(GL_TRIANGLES);
+                        glColor3f(c00 * vcolor[cc][X], c00 * vcolor[cc][Y], c00 * vcolor[cc][Z]);
+                        glNormal3fv(n00);
+                        glVertex3fv(v00);
+
+                        glColor3f(c11 * vcolor[cc][X], c11 * vcolor[cc][Y], c11 * vcolor[cc][Z]);
+                        glNormal3fv(n11v);
+                        glVertex3fv(v11);
+
+                        glColor3f(c10 * vcolor[cc][X], c10 * vcolor[cc][Y], c10 * vcolor[cc][Z]);
+                        glNormal3fv(n10v);
+                        glVertex3fv(v10);
+                    glEnd();
+                }
+            }
+
+            free(vnorm);
+            break;
     }
-
 }
 
 void MostrarPtosPoligControle(matriz *sup)
