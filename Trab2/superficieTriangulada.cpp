@@ -366,54 +366,78 @@ void MostrarUmPatch(int cc)
           }
           break;
 
-        case GL_QUADS: // preserved if user sets it, but we will draw as filled quads triangulated
-        case GL_TRIANGLES:
-          glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        case GL_QUADS: // preserved for compatibility
+case GL_TRIANGLES:
+{
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
-          for(i = 0; i < pMatriz->n-1; i++)
-          {
-              for(j = 0; j < pMatriz->m-1; j++)
-              {
-                // vertices do quad
-                float v00[3] = { pMatriz->ponto[i][j][X],   pMatriz->ponto[i][j][Y],   pMatriz->ponto[i][j][Z]   };
-                float v01[3] = { pMatriz->ponto[i][j+1][X], pMatriz->ponto[i][j+1][Y], pMatriz->ponto[i][j+1][Z] };
-                float v11[3] = { pMatriz->ponto[i+1][j+1][X], pMatriz->ponto[i+1][j+1][Y], pMatriz->ponto[i+1][j+1][Z] };
-                float v10[3] = { pMatriz->ponto[i+1][j][X], pMatriz->ponto[i+1][j][Y], pMatriz->ponto[i+1][j][Z] };
+    // percorre a malha, gerando triângulos diretos
+    for (int i = 0; i < pMatriz->n - 1; i++) {
+        for (int j = 0; j < pMatriz->m - 1; j++) {
 
-                // Triângulo A: v00, v01, v11
-                float nA[3];
-                calcNormalTri(v00, v01, v11, nA);
-                float cA[3] = { (v00[X]+v01[X]+v11[X])/3.0f, (v00[Y]+v01[Y]+v11[Y])/3.0f, (v00[Z]+v01[Z]+v11[Z])/3.0f };
-                float ambient = 0.25f;
-                float contribA = ambient + luzContrib(lightPos1, nA, cA) + 0.6f * luzContrib(lightPos2, nA, cA);
-                if(contribA > 1.0f) contribA = 1.0f;
+            // obtém os 4 vértices do quadrado atual (ainda necessários para formar os 2 triângulos)
+            float v00[3] = { pMatriz->ponto[i][j][X],     pMatriz->ponto[i][j][Y],     pMatriz->ponto[i][j][Z]     };
+            float v01[3] = { pMatriz->ponto[i][j+1][X],   pMatriz->ponto[i][j+1][Y],   pMatriz->ponto[i][j+1][Z]   };
+            float v10[3] = { pMatriz->ponto[i+1][j][X],   pMatriz->ponto[i+1][j][Y],   pMatriz->ponto[i+1][j][Z]   };
+            float v11[3] = { pMatriz->ponto[i+1][j+1][X], pMatriz->ponto[i+1][j+1][Y], pMatriz->ponto[i+1][j+1][Z] };
 
-                glBegin(GL_TRIANGLES);
-                    glColor3f(contribA * vcolor[cc][X], contribA * vcolor[cc][Y], contribA * vcolor[cc][Z]);
-                    glNormal3fv(nA);
-                    glVertex3fv(pMatriz->ponto[i][j]);
-                    glVertex3fv(pMatriz->ponto[i][j+1]);
-                    glVertex3fv(pMatriz->ponto[i+1][j+1]);
-                glEnd();
+            // ===== Triângulo 1: v00, v01, v11 =====
+            float nA[3];
+            calcNormalTri(v00, v01, v11, nA);
 
-                // Triângulo B: v00, v11, v10
-                float nB[3];
-                calcNormalTri(v00, v11, v10, nB);
-                float cB[3] = { (v00[X]+v11[X]+v10[X])/3.0f, (v00[Y]+v11[Y]+v10[Y])/3.0f, (v00[Z]+v11[Z]+v10[Z])/3.0f };
-                float contribB = luzContrib(lightPos1, nB, cB) + 0.6f * luzContrib(lightPos2, nB, cB);
-                if(contribB > 1.0f) contribB = 1.0f;
+            float cA[3] = {
+                (v00[X] + v01[X] + v11[X]) / 3.0f,
+                (v00[Y] + v01[Y] + v11[Y]) / 3.0f,
+                (v00[Z] + v01[Z] + v11[Z]) / 3.0f
+            };
 
-                glBegin(GL_TRIANGLES);
-                    glColor3f(contribB * vcolor[cc][X], contribB * vcolor[cc][Y], contribB * vcolor[cc][Z]);
-                    glNormal3fv(nB);
-                    glVertex3fv(pMatriz->ponto[i][j]);
-                    glVertex3fv(pMatriz->ponto[i+1][j+1]);
-                    glVertex3fv(pMatriz->ponto[i+1][j]);
-                glEnd();
+            float ambient = 0.25f;
+            float contribA = ambient
+                + luzContrib(lightPos1, nA, cA)
+                + 0.6f * luzContrib(lightPos2, nA, cA);
 
-              }
-          }
-          break;
+            contribA = fminf(contribA, 1.0f);
+
+            glBegin(GL_TRIANGLES);
+                glColor3f(contribA * vcolor[cc][X],
+                          contribA * vcolor[cc][Y],
+                          contribA * vcolor[cc][Z]);
+                glNormal3fv(nA);
+                glVertex3fv(v00);
+                glVertex3fv(v01);
+                glVertex3fv(v11);
+            glEnd();
+
+            // ===== Triângulo 2: v00, v11, v10 =====
+            float nB[3];
+            calcNormalTri(v00, v11, v10, nB);
+
+            float cB[3] = {
+                (v00[X] + v11[X] + v10[X]) / 3.0f,
+                (v00[Y] + v11[Y] + v10[Y]) / 3.0f,
+                (v00[Z] + v11[Z] + v10[Z]) / 3.0f
+            };
+
+            float contribB = ambient
+                + luzContrib(lightPos1, nB, cB)
+                + 0.6f * luzContrib(lightPos2, nB, cB);
+
+            contribB = fminf(contribB, 1.0f);
+
+            glBegin(GL_TRIANGLES);
+                glColor3f(contribB * vcolor[cc][X],
+                          contribB * vcolor[cc][Y],
+                          contribB * vcolor[cc][Z]);
+                glNormal3fv(nB);
+                glVertex3fv(v00);
+                glVertex3fv(v11);
+                glVertex3fv(v10);
+            glEnd();
+        }
+    }
+    break;
+}
+
     }
 
 }
